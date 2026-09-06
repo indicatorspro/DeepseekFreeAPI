@@ -445,6 +445,32 @@ func TestStreamTwoSequentialBlocks(t *testing.T) {
 	}
 }
 
+// Regression: the keep-window flush used to cut at a raw byte offset, which
+// split multi-byte UTF-8 characters ("ê", "😄") into orphan continuation
+// bytes that surfaced to the client as U+FFFD replacement glyphs — e.g.
+// "voc\ufffd" + "\ufffd p" instead of "você p". Streaming must keep runes
+// intact no matter how upstream fragments arrive.
+func TestStreamInterceptorKeepsUTF8Intact(t *testing.T) {
+	stream := "Você quer que eu dê uma olhada no código? Firmeza! 😄 调研 teste."
+	for _, n := range []int{1, 2, 3, 5, 7} { // byte-grained feeds, may split runes
+		in := &AgentStreamInterceptor{}
+		var b strings.Builder
+		for i := 0; i < len(stream); i += n {
+			end := i + n
+			if end > len(stream) {
+				end = len(stream)
+			}
+			b.WriteString(in.Feed(stream[i:end]).Content)
+		}
+		b.WriteString(in.Finish().Content)
+		if got := b.String(); strings.ContainsRune(got, '\ufffd') {
+			t.Errorf("chunk=%d bytes: replacement character leaked: %q", n, got)
+		} else if got != stream {
+			t.Errorf("chunk=%d bytes: content altered:\n got %q\nwant %q", n, got, stream)
+		}
+	}
+}
+
 // splitRunes cuts s into pieces of n bytes (ASCII input assumed).
 func splitRunes(s string, n int) []string {
 	var out []string
