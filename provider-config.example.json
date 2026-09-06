@@ -1,0 +1,72 @@
+{
+  "npm": "@ai-sdk/openai-compatible",
+  "options": {
+    "baseURL": "http://127.0.0.1:3000/v1",
+    "apiKey": "Waguri",
+    "setCacheKey": true
+  },
+  "models": {
+    "deepseek-v4-flash": {
+      "name": "DeepSeek-V4-Flash",
+      "search": true,
+      "limit": {
+        "context": 1000000,
+        "output": 4096
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "variants": {
+        "low": {
+          "effort": "low"
+        },
+        "medium": {
+          "effort": "medium"
+        },
+        "high": {
+          "effort": "high"
+        },
+        "max": {
+          "effort": "max"
+        }
+      }
+    },
+    "deepseek-v4-pro": {
+      "name": "DeepSeek-V4-Pro",
+      "search": false,
+      "limit": {
+        "context": 32000,
+        "output": 4096
+      },
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "reasoning": true,
+      "variants": {
+        "low": {
+          "effort": "low"
+        },
+        "medium": {
+          "effort": "medium"
+        },
+        "high": {
+          "effort": "high"
+        },
+        "max": {
+          "effort": "max"
+        }
+      }
+    }
+  }
+}
