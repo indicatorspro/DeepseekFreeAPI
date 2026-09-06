@@ -191,7 +191,8 @@ Rules:
 - Any other model id is rejected with `400 model_not_found`.
 - `deepseek-v4-pro` with `"search": true` is rejected with `400 model_capability` instead of being silently downgraded.
 - When thinking is enabled, the reasoning trace is returned separately as `reasoning_content` (streaming: `delta.reasoning_content`; non-streaming: `message.reasoning_content`) — it never mixes into `content`.
-- Web search is forced off when `AGENT_MODE` is enabled (tool answers must stay deterministic).
+- Web search is **auto-enabled** for models that support it (flash) even when the client doesn't send `"search": true` — this ensures search works with clients like AionUI that don't expose a search toggle. Pro never gets search.
+- Web search works in both normal mode and `AGENT_MODE`; citations arrive as plain text and do not collide with the tool-call markers.
 
 #### Measured limits (empirical, 2026-09-06)
 

@@ -300,14 +300,20 @@ func (s *ProxyServer) handleChat(w http.ResponseWriter, r *http.Request) {
 	// "reasoning_effort"; the model name never implies it.
 	thinking := ThinkingRequested(body)
 	search := body.Search
+	// Some clients (e.g. AionUI) do not expose a search toggle, so web search
+	// is hard-coded on for every model that supports it. Models without search
+	// support (pro) silently keep it off instead of returning 400.
+	if model.SupportsSearch {
+		search = true
+	}
 
 	prompt := ""
 	if agentMode {
 		// Agent mode folds every message plus the tool contract into one
 		// role-aware prompt so the model cannot silently use tools outside
-		// the caller's OpenAI tool contract (web search stays off).
+		// the caller's OpenAI tool contract. Web search is allowed: citations
+		// arrive as plain text and do not collide with the tool-call markers.
 		prompt = buildAgentPrompt(body.Messages, body.Tools)
-		search = false
 		debugf("agent prompt (%d chars):\n%s", len(prompt), prompt)
 	} else if len(body.Messages) > 0 {
 		raw := body.Messages[len(body.Messages)-1].Content
