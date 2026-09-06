@@ -20,7 +20,7 @@
 - Streaming and non-streaming responses
 - Threaded conversation support
 - **Session garbage collector** — with history disabled, every request runs on a throwaway chat session that is deleted on DeepSeek right after use, so session IDs never accumulate on the account
-- **Async session-pool mode (default)** — a standing batch of 3 pre-made sessions is kept warm at all times; stateless requests grab one instantly instead of paying per-request creation latency, and each consumed session is deleted upstream + replaced the moment its response is fully processed. `--sync-mode` restores the legacy synchronous flow
+- **Async session-pool mode (default)** — a standing batch of 5 pre-made sessions is kept warm at all times; stateless requests grab one instantly instead of paying per-request creation latency, and each consumed session is deleted upstream + replaced the moment its response is fully processed. `--sync-mode` restores the legacy synchronous flow
 - **Graceful shutdown** — CTRL+C drains in-flight requests, then clears every remaining pooled session on DeepSeek before exiting (a second CTRL+C force-exits)
 - **Agent mode** (`--agent-mode` / `AGENT_MODE=true`) — OpenAI function/tool calling translated into a single role-tagged prompt; model tool-call blocks are parsed back into OpenAI `tool_calls`
 - **Debug mode** (`--debug` / `DEBUG=true`) — prints every request/response headers and bodies in both directions, PoW challenges, SSE frames and session IDs
@@ -32,15 +32,19 @@
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/izaart95-jpg/DeepseekFreeAPI.git DeepRouter
-cd DeepRouter
+git clone https://github.com/indicatorspro/DeepseekFreeAPI.git
+cd DeepseekFreeAPI
 go mod tidy
 ```
 
 ### 2. Build (requires Go 1.26+)
 
 ```bash
+# Linux / macOS
 go build -o deepseek-proxy .
+
+# Windows (must have .exe extension to run)
+go build -o deepseek-proxy.exe .
 ```
 
 ### 3. Obtain your DeepSeek token
@@ -76,18 +80,20 @@ $env:DEEPSEEK_TOKEN="your_token_here"
 ### OpenAI-compatible proxy server
 
 ```bash
-# requires Go 1.26+
-go build -o deepseek-proxy .
-DEEPSEEK_TOKEN=<token> ./deepseek-proxy proxy
+# Linux / macOS
+DEEPSEEK_TOKEN=<token> ./deepseek-proxy
+
+# Windows (PowerShell)
+$env:DEEPSEEK_TOKEN="<token>"; .\deepseek-proxy.exe
 
 # debug mode (verbose HTTP dumps)
-DEEPSEEK_TOKEN=<token> DEBUG=true ./deepseek-proxy proxy
-# or: ./deepseek-proxy --debug proxy
+DEBUG=true ./deepseek-proxy        # or: ./deepseek-proxy --debug
 
 # agent mode (OpenAI tool calling via prompt protocol)
-DEEPSEEK_TOKEN=<token> AGENT_MODE=true ./deepseek-proxy proxy
-# or: ./deepseek-proxy --agent-mode proxy
+AGENT_MODE=true ./deepseek-proxy   # or: ./deepseek-proxy --agent-mode
 ```
+
+The proxy listens on port **3000** by default. Change it with `PORT=8080` in `.env` or as an environment variable.
 
 ### Sync vs async session flow
 
@@ -141,7 +147,9 @@ Enable with `--debug` or `DEBUG=1|true|yes|on`. Every exchange is printed to std
 
 ## API Reference
 
-The proxy runs at `http://localhost:3000`. All endpoints require the bearer token `Waguri`.
+The proxy runs at `http://localhost:3000` by default (change with `PORT` in `.env`). All endpoints require the bearer token set in `PROXY_API_KEY` (default `Waguri` if unset).
+
+> ⚠️ **Security note:** the default proxy key `Waguri` is widely known — always set your own `PROXY_API_KEY` in `.env` before exposing the proxy beyond localhost.
 
 ### `POST /history` — Toggle conversation history
 
@@ -183,6 +191,46 @@ Rules:
 - Any other model id is rejected with `400 model_not_found`.
 - `deepseek-v4-pro` with `"search": true` is rejected with `400 model_capability` instead of being silently downgraded.
 - When thinking is enabled, the reasoning trace is returned separately as `reasoning_content` (streaming: `delta.reasoning_content`; non-streaming: `message.reasoning_content`) — it never mixes into `content`.
+- Web search is forced off when `AGENT_MODE` is enabled (tool answers must stay deterministic).
+
+#### Measured limits (empirical, 2026-09-06)
+
+These numbers were measured against the free chat.deepseek.com backend through this proxy (agent mode off) using the probe scripts in `tests/`. They are properties of the upstream service, not of the proxy code — DeepSeek can change them at any time.
+
+| model | context window (input) | output cap (per completion) |
+|---|---|---|
+| `deepseek-v4-flash` | ≥ 786k words accepted, no wall found (~1M-token class) | ~4 096 tokens (deterministic truncation) |
+| `deepseek-v4-pro` | ~32 000 tokens hard wall (returns HTTP 502 "Content is too long") | ~4 096 tokens (same as flash) |
+
+Notes:
+
+- The output cap is identical across both models and deterministic (4/4 probe runs ended at the exact same point) — it is an upstream per-completion budget. The OpenAI-style `max_tokens` field is **ignored** by the proxy.
+- Token counts are estimates (filler text ≈ 1 word ≈ 1 token).
+- Re-run `tests/limits-probe.ps1` to revalidate at any time.
+
+#### Provider config for AI SDK clients
+
+A ready-to-use example for `@ai-sdk/openai-compatible` lives at [`provider-config.example.json`](provider-config.example.json). It includes both models with measured limits, modalities, search capability flags, and reasoning effort variants. Adjust `baseURL` (port) and `apiKey` to match your `.env` (`PORT`, `PROXY_API_KEY`).
+- Web search is forced off when `AGENT_MODE` is enabled (tool answers must stay deterministic).
+
+#### Measured limits (empirical, 2026-09-06)
+
+These numbers were measured against the free chat.deepseek.com backend through this proxy (agent mode off) using the probe scripts in `tests/`. They are properties of the upstream service, not of the proxy code — DeepSeek can change them at any time.
+
+| model | context window (input) | output cap (per completion) |
+|---|---|---|
+| `deepseek-v4-flash` | ≥ 786k words accepted, no wall found (~1M-token class) | ~4 096 tokens (deterministic truncation) |
+| `deepseek-v4-pro` | ~32 000 tokens hard wall (returns HTTP 502 `"Content is too long"`) | ~4 096 tokens (same as flash) |
+
+Notes:
+
+- The output cap is identical across both models and deterministic (4/4 probe runs ended at the exact same point) — it is an upstream per-completion budget. The OpenAI-style `max_tokens` field is **ignored** by the proxy.
+- Token counts are estimates (filler text ≈ 1 word ≈ 1 token).
+- Re-run `tests/limits-probe.ps1` to revalidate at any time.
+
+#### Provider config for AI SDK clients
+
+A ready-to-use example for `@ai-sdk/openai-compatible` lives at [`provider-config.example.json`](provider-config.example.json). It includes both models with measured limits, modalities, search capability flags, and reasoning effort variants. Adjust `baseURL` (port) and `apiKey` to match your `.env` (`PORT`, `PROXY_API_KEY`).
 
 ### `POST /v1/chat/completions` — Chat completions (OpenAI format)
 
