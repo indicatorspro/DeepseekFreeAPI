@@ -1,0 +1,23 @@
+{
+  "model": "deepseek-v4-flash",
+  "stream": true,
+  "messages": [
+    {"role": "user", "content": "Quais são as notícias mais importantes de hoje no Brasil?"}
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "description": "Get the current weather and forecast for a location",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "location": {"type": "string", "description": "City name"}
+          },
+          "required": ["location"]
+        }
+      }
+    }
+  ]
+}

@@ -22,16 +22,25 @@ const agentToolStart = "<<<TOOL_CALL>>>"
 const agentToolEnd = "<<<END_TOOL_CALL>>>"
 
 // ── marker tolerance ─────────────────────────────────────────────────────────
-// Models occasionally miscount the angle brackets framing the markers —
-// observed in the wild with deepseek-v4-pro emitting "<<TOOL_CALL>>>" (two
-// leading '<') while producing a well-formed "<<<END_TOOL_CALL>>>". An
-// exact-literal matcher silently misses such blocks and the whole tool call
-// leaks to the client as plain content. Both markers are therefore matched
-// with a bracket run of 2..4 on each side; emission above stays canonical.
+// Models frequently miscount the angle brackets framing the markers —
+// observed in the wild: deepseek-v4-pro emitting "<<TOOL_CALL>>>" (two
+// leading '<') and deepseek-v4-flash emitting "<TOOL_CALL>...<END_TOOL_CALL>"
+// (single brackets on BOTH sides). An exact-literal matcher silently misses
+// such blocks and the whole tool call leaks to the client as plain content,
+// typically followed by the model going silent because the client cannot
+// parse the stray markup.
+//
+// Both markers are therefore matched with a bracket run of 1..4 on each side.
+// False positives are negligible: the word "TOOL_CALL" (all caps, underscore)
+// is far too specific to appear naturally in prose or code, and the opening
+// marker must pair with a closing one to be treated as a block.
+//
+// Emission always uses the canonical spelling ("<<<TOOL_CALL>>>" /
+// "<<<END_TOOL_CALL>>>").
 const (
 	agentStartWord   = "TOOL_CALL"
 	agentEndWord     = "END_TOOL_CALL"
-	agentMinBrackets = 2
+	agentMinBrackets = 1
 	agentMaxBrackets = 4
 )
 
@@ -159,14 +168,15 @@ const agentSystemPrefix = "<system>\n" +
 	"REPLY FORMAT \u2014 exactly ONE of:\n" +
 	"(A) TOOL CALL: <<<TOOL_CALL>>>" + agentCallSchema + "<<<END_TOOL_CALL>>> \u2014 nothing before or after.\n" +
 	"    The JSON object has EXACTLY two keys: \"name\" (the tool to call, spelled exactly as in <tools>) and \"arguments\" (an object with ONLY that tool's parameters).\n" +
-	"(B) FINAL ANSWER: plain text, only when no tool applies.\n" +
+	"(B) FINAL ANSWER: plain text, when no tool applies.\n" +
 	"\n" +
 	"RULES:\n" +
+	"- WEB SEARCH: you have BUILT-IN web search, always active. When the task needs current or real-time information (news, prices, weather, events, dates), answer directly using your web search and cite the sources you used. NEVER claim you lack internet, tools, or real-time access for such questions. Web search is NOT one of the <tools> \u2014 never express it as a tool call; it runs on its own while you answer.\n" +
 	"- Never announce plans (\u201cI\u2019ll...\u201d, \u201cLet me...\u201d). Emit the block \u2014 that IS the action.\n" +
 	"- Never print code fences (" + "```bash" + ", " + "```json" + "). Only the runtime executes tools.\n" +
 	"- Never wrap tool-call markers in code fences.\n" +
 	"- Never invent results. Stop at <<<END_TOOL_CALL>>> and wait for tool output.\n" +
-	"- Never call a tool not listed in <tools>.\n" +
+	"- Never call a tool not listed in <tools> (built-in web search is the only exception \u2014 see the WEB SEARCH rule).\n" +
 	"- PROGRESS: every turn must move the task forward. If the last tool result already answers the current step, do NOT call the same tool again \u2014 either advance to the next step or give the final answer.\n" +
 	"- NEVER REPEAT: do not re-issue any tool call already listed in <already_called>. If its result was insufficient, change the call (different arguments or different tool), never resend it as-is.\n" +
 	"- If the task is fully done, answer with the result in plain text \u2014 do not start another tool call.\n" +
@@ -178,8 +188,9 @@ const agentSystemPrefix = "<system>\n" +
 const agentFinalReminder = `<output_rules>
 RESPOND WITH EXACTLY ONE OF:
 1. <<<TOOL_CALL>>>{"name":"<tool_name>","arguments":{...}}<<<END_TOOL_CALL>>> (no fences, no other text)
-2. Plain text final answer (only if no tool applies to this step)
+2. Plain text final answer (when no tool applies to this step)
 The tool-call JSON uses EXACTLY the keys "name" and "arguments" — never a "tool" key, never bare top-level parameters.
+WEB SEARCH is built-in and always on: if this step needs current/real-time information, answer it directly and cite sources — never say you lack real-time access, never emit search as a tool call.
 NO REPEATS: a call already listed in <already_called> must not be re-issued. Same step answered? Move on or answer in plain text.
 </output_rules>`
 
@@ -997,7 +1008,16 @@ func (in *AgentStreamInterceptor) drain(final bool) AgentParsedChunk {
 		bodyStart := in.offset + markerLen
 		idx, endMarkerLen := findAgentMarker(in.buffer[bodyStart:], agentEndWord, final)
 		if idx < 0 {
-			break // incomplete block: wait for more chunks
+			if final {
+				// The closing marker is definitively absent: the block was
+				// truncated or never closed. Leak it (opening marker included)
+				// as visible text — matching the invalid-block policy below —
+				// instead of dropping it, so the client still receives the
+				// model's words rather than silence.
+				content = append(content, in.buffer[in.offset:])
+				in.offset = len(in.buffer)
+			}
+			break // incomplete block: wait for more chunks (or leaked above)
 		}
 		end := bodyStart + idx
 		raw := strings.TrimSpace(in.buffer[bodyStart:end])

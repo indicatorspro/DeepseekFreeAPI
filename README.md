@@ -135,7 +135,7 @@ The prompt pins the exact `{"name","arguments"}` schema, and the parser addition
 
 **Anti-loop guardrails** — long agent sessions used to drift into re-issuing identical tool calls (or thinking indefinitely) because the prompt replayed history but never told the model which calls were already made. The prompt now carries an `<already_called>` section: a deduplicated, order-preserving list of every call already issued, placed late in the prompt (right before `<current_task>`) where recency weight is highest, plus `<system>` rules (PROGRESS mandate, NEVER REPEAT, task-done → plain-text answer) and a `NO REPEATS` line in the `<output_rules>` final reminder — so the model always has a hard, current state to check against before emitting a call.
 
-Web search is forced off in this mode so tool answers stay deterministic.
+Web search stays available in this mode: the prompt tells the model its built-in web search is always on and must never be expressed as a tool call, so up-to-date questions get answered with `[citation:N]` text while real tool calls still flow through the `<<<TOOL_CALL>>>` protocol. (Without this, the strict tool contract suppressed DeepSeek's native search and the model refused current-events questions.)
 
 ### Debug mode
 
@@ -193,26 +193,6 @@ Rules:
 - When thinking is enabled, the reasoning trace is returned separately as `reasoning_content` (streaming: `delta.reasoning_content`; non-streaming: `message.reasoning_content`) — it never mixes into `content`.
 - Web search is **auto-enabled** for models that support it (flash) even when the client doesn't send `"search": true` — this ensures search works with clients like AionUI that don't expose a search toggle. Pro never gets search.
 - Web search works in both normal mode and `AGENT_MODE`; citations arrive as plain text and do not collide with the tool-call markers.
-
-#### Measured limits (empirical, 2026-09-06)
-
-These numbers were measured against the free chat.deepseek.com backend through this proxy (agent mode off) using the probe scripts in `tests/`. They are properties of the upstream service, not of the proxy code — DeepSeek can change them at any time.
-
-| model | context window (input) | output cap (per completion) |
-|---|---|---|
-| `deepseek-v4-flash` | ≥ 786k words accepted, no wall found (~1M-token class) | ~4 096 tokens (deterministic truncation) |
-| `deepseek-v4-pro` | ~32 000 tokens hard wall (returns HTTP 502 "Content is too long") | ~4 096 tokens (same as flash) |
-
-Notes:
-
-- The output cap is identical across both models and deterministic (4/4 probe runs ended at the exact same point) — it is an upstream per-completion budget. The OpenAI-style `max_tokens` field is **ignored** by the proxy.
-- Token counts are estimates (filler text ≈ 1 word ≈ 1 token).
-- Re-run `tests/limits-probe.ps1` to revalidate at any time.
-
-#### Provider config for AI SDK clients
-
-A ready-to-use example for `@ai-sdk/openai-compatible` lives at [`provider-config.example.json`](provider-config.example.json). It includes both models with measured limits, modalities, search capability flags, and reasoning effort variants. Adjust `baseURL` (port) and `apiKey` to match your `.env` (`PORT`, `PROXY_API_KEY`).
-- Web search is forced off when `AGENT_MODE` is enabled (tool answers must stay deterministic).
 
 #### Measured limits (empirical, 2026-09-06)
 

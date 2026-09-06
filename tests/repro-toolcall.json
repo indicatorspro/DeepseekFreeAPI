@@ -1,0 +1,24 @@
+{
+  "model": "deepseek-v4-flash",
+  "stream": true,
+  "messages": [
+    {"role": "system", "content": "You are a helpful AI assistant. Use the available tools whenever they help answer the user's request."},
+    {"role": "user", "content": "Qual a previsão do tempo em São Paulo hoje?"}
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "description": "Get the current weather and forecast for a location",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "location": {"type": "string", "description": "City name"}
+          },
+          "required": ["location"]
+        }
+      }
+    }
+  ]
+}

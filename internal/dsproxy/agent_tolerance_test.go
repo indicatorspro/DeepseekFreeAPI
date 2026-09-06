@@ -19,8 +19,8 @@ func TestFindAgentMarkerVariants(t *testing.T) {
 		{"<<<TOOL_CALL>>", 0, 14},      // one '>' short
 		{"<<<<TOOL_CALL>>>>", 0, 17},   // worst tolerated spelling
 		{"x <<<TOOL_CALL>>> y", 2, 15}, // embedded
-		{"<TOOL_CALL>", -1, 0},         // too few brackets
-		{"<<<TOOL_CALL>", -1, 0},       // unterminated
+		{"<TOOL_CALL>", 0, 11},         // single-bracket spelling (min=1)
+		{"<<<TOOL_CALL>", 0, 13},       // single trailing '>' is enough now
 		{"TOOL_CALL", -1, 0},           // bare word
 		{"<<<<<<<TOOL_CALL>>>", -1, 0}, // bracket run longer than tolerated
 	}

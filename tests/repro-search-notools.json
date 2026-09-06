@@ -1,0 +1,7 @@
+{
+  "model": "deepseek-v4-flash",
+  "stream": true,
+  "messages": [
+    {"role": "user", "content": "Qual é a cotação do dólar hoje e as principais notícias do Brasil?"}
+  ]
+}
