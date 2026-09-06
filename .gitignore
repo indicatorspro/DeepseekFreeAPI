@@ -3,3 +3,7 @@ deepseek
 cookies.json
 reference/
 .env
+
+*.exe
+*.log
+
